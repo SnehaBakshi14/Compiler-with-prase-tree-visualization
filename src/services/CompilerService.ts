@@ -233,7 +233,11 @@ export class CompilerService {
         
         parentNode.children.push(forNode);
       } else {
-        // Handle other statements as before...
+        if (tokens[i].value === '{') {
+          braceCount++;
+        } else if (tokens[i].value === '}') {
+          braceCount--;
+        }
         i++;
       }
     }
@@ -241,6 +245,149 @@ export class CompilerService {
     return i;
   }
 
-  // All other methods from the original file remain unchanged...
-  [... All other methods from the original file ...]
+  private static performSyntaxAnalysis(tokens: Token[]): ParseTreeNode {
+    let currentId = 0;
+    const getNextId = () => `node_${currentId++}`;
+
+    const root: ParseTreeNode = {
+      id: getNextId(),
+      type: 'PROGRAM',
+      children: []
+    };
+
+    let i = 0;
+    while (i < tokens.length) {
+      if (tokens[i].type === 'KEYWORD') {
+        const node: ParseTreeNode = {
+          id: getNextId(),
+          type: 'STATEMENT',
+          children: []
+        };
+        
+        while (i < tokens.length && tokens[i].value !== ';' && tokens[i].value !== '{') {
+          node.children.push({
+            id: getNextId(),
+            type: tokens[i].type,
+            value: tokens[i].value,
+            children: []
+          });
+          i++;
+        }
+
+        if (i < tokens.length && tokens[i].value === '{') {
+          i++;
+          i = this.parseFunctionBody(tokens, i, 1, node, getNextId);
+        }
+
+        root.children.push(node);
+      }
+      i++;
+    }
+
+    return root;
+  }
+
+  private static performSemanticAnalysis(parseTree: ParseTreeNode, tokens: Token[]): { scopes: VariableScope[], errors: any[] } {
+    const scopes: VariableScope[] = [];
+    const errors: any[] = [];
+    let currentScope: VariableScope = {
+      id: 'global',
+      variables: new Map(),
+      parent: null,
+      children: []
+    };
+    scopes.push(currentScope);
+
+    const analyzeNode = (node: ParseTreeNode, scope: VariableScope) => {
+      if (node.type === 'STATEMENT' && node.children[0]?.type === 'KEYWORD') {
+        const keyword = node.children[0].value;
+        if (['int', 'char', 'float', 'double'].includes(keyword)) {
+          const identifier = node.children[1];
+          if (identifier && identifier.type === 'IDENTIFIER') {
+            scope.variables.set(identifier.value, {
+              type: keyword,
+              initialized: node.children.length > 3
+            });
+          }
+        }
+      }
+
+      if (node.type === 'FOR_STATEMENT' || node.type === 'IF_STATEMENT') {
+        const newScope: VariableScope = {
+          id: `${scope.id}_${node.id}`,
+          variables: new Map(),
+          parent: scope,
+          children: []
+        };
+        scope.children.push(newScope);
+        currentScope = newScope;
+        scopes.push(newScope);
+      }
+
+      node.children.forEach(child => analyzeNode(child, currentScope));
+    };
+
+    analyzeNode(parseTree, currentScope);
+    return { scopes, errors };
+  }
+
+  private static analyzeControlFlow(parseTree: ParseTreeNode): ControlFlowNode {
+    const createFlowNode = (node: ParseTreeNode): ControlFlowNode => {
+      const flowNode: ControlFlowNode = {
+        id: node.id,
+        type: node.type,
+        next: [],
+        conditions: []
+      };
+
+      if (node.type === 'FOR_STATEMENT' || node.type === 'WHILE_STATEMENT') {
+        const condition = node.children.find(child => child.type.includes('CONDITION'));
+        if (condition) {
+          flowNode.conditions.push({
+            type: 'LOOP',
+            expression: condition.children.map(t => t.value).join(' ')
+          });
+        }
+      }
+
+      node.children.forEach(child => {
+        const childFlow = createFlowNode(child);
+        flowNode.next.push(childFlow);
+      });
+
+      return flowNode;
+    };
+
+    return createFlowNode(parseTree);
+  }
+
+  private static estimateComplexity(parseTree: ParseTreeNode, controlFlow: ControlFlowNode): ComplexityInfo {
+    let cyclomaticComplexity = 1;
+    let timeComplexity = 'O(1)';
+    let spaceComplexity = 'O(1)';
+
+    const calculateComplexity = (node: ParseTreeNode) => {
+      if (node.type === 'FOR_STATEMENT' || node.type === 'WHILE_STATEMENT') {
+        cyclomaticComplexity++;
+        
+        // Simple estimation: nested loops increase complexity
+        if (timeComplexity === 'O(1)') timeComplexity = 'O(n)';
+        else if (timeComplexity === 'O(n)') timeComplexity = 'O(n²)';
+      }
+
+      if (node.type === 'IF_STATEMENT') {
+        cyclomaticComplexity++;
+      }
+
+      node.children.forEach(calculateComplexity);
+    };
+
+    calculateComplexity(parseTree);
+
+    return {
+      cyclomatic: cyclomaticComplexity,
+      time: timeComplexity,
+      space: spaceComplexity
+    };
+  }
 }

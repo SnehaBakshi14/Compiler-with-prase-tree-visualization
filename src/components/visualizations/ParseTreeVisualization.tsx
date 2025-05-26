@@ -1,183 +1,87 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ParseTreeNode } from '../../types/compiler';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 
 interface ParseTreeVisualizationProps {
   parseTree: ParseTreeNode | null;
 }
 
 const ParseTreeVisualization: React.FC<ParseTreeVisualizationProps> = ({ parseTree }) => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['node_0']));
   const [selectedNode, setSelectedNode] = useState<ParseTreeNode | null>(null);
   
-  useEffect(() => {
-    if (!parseTree || !svgRef.current) return;
-    renderTree(layoutTree(parseTree));
-  }, [parseTree, transform]);
-  
-  const layoutTree = (node: ParseTreeNode) => {
-    const NODE_WIDTH = 120;
-    const NODE_HEIGHT = 30;
-    const LEVEL_HEIGHT = 80;
-    const nodes: any[] = [];
-    const links: any[] = [];
-    
-    const processNode = (n: ParseTreeNode, x = 0, y = 0, level = 0) => {
-      nodes.push({
-        id: n.id,
-        label: n.type,
-        value: n.value,
-        x,
-        y: y + level * LEVEL_HEIGHT,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-      });
-      
-      if (!n.children || n.children.length === 0) return NODE_WIDTH;
-      
-      const childrenWidth = n.children.reduce((total, child) => {
-        return total + processNode(child, 0, y, level + 1);
-      }, 0);
-      
-      const startX = x - childrenWidth / 2 + NODE_WIDTH / 2;
-      let currentX = startX;
-      
-      n.children.forEach(child => {
-        const childWidth = processNode(child, currentX, y, level + 1);
-        links.push({
-          source: n.id,
-          target: child.id,
-          sourceX: x,
-          sourceY: y + level * LEVEL_HEIGHT + NODE_HEIGHT,
-          targetX: currentX,
-          targetY: y + (level + 1) * LEVEL_HEIGHT,
-        });
-        currentX += childWidth;
-      });
-      
-      return Math.max(NODE_WIDTH, childrenWidth);
-    };
-    
-    processNode(node);
-    return { nodes, links };
-  };
-  
-  const renderTree = ({ nodes, links }: { nodes: any[], links: any[] }) => {
-    if (!svgRef.current) return;
-    
-    const svg = svgRef.current;
-    svg.innerHTML = '';
-    
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('transform', `translate(${transform.x},${transform.y}) scale(${transform.scale})`);
-    svg.appendChild(g);
-    
-    // Draw links
-    links.forEach(link => {
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      const dx = link.targetX - link.sourceX;
-      const dy = link.targetY - link.sourceY;
-      const midY = link.sourceY + dy / 2;
-      
-      path.setAttribute('d', `M${link.sourceX},${link.sourceY} C${link.sourceX},${midY} ${link.targetX},${midY} ${link.targetX},${link.targetY}`);
-      path.setAttribute('stroke', '#94a3b8');
-      path.setAttribute('stroke-width', '1.5');
-      path.setAttribute('fill', 'none');
-      g.appendChild(path);
-    });
-    
-    // Draw nodes
-    nodes.forEach(node => {
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.setAttribute('transform', `translate(${node.x - node.width / 2},${node.y})`);
-      g.appendChild(group);
-      
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('width', String(node.width));
-      rect.setAttribute('height', String(node.height));
-      rect.setAttribute('rx', '4');
-      rect.setAttribute('fill', '#e0f2fe');
-      rect.setAttribute('stroke', '#0284c7');
-      rect.setAttribute('stroke-width', '1.5');
-      group.appendChild(rect);
-      
-      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', String(node.width / 2));
-      text.setAttribute('y', String(node.height / 2));
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('dominant-baseline', 'middle');
-      text.setAttribute('font-family', 'monospace');
-      text.setAttribute('font-size', '12px');
-      text.textContent = node.label;
-      group.appendChild(text);
-      
-      group.addEventListener('click', (e) => {
-        e.stopPropagation();
-        setSelectedNode(node);
-      });
-      
-      group.addEventListener('mouseover', () => {
-        rect.setAttribute('fill', '#bae6fd');
-        rect.setAttribute('stroke-width', '2');
-      });
-      
-      group.addEventListener('mouseout', () => {
-        rect.setAttribute('fill', '#e0f2fe');
-        rect.setAttribute('stroke-width', '1.5');
-      });
+  const toggleNode = (nodeId: string) => {
+    setExpandedNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
     });
   };
-  
-  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
+
+  const renderNode = (node: ParseTreeNode, level: number = 0) => {
+    const isExpanded = expandedNodes.has(node.id);
+    const hasChildren = node.children && node.children.length > 0;
     
-    const point = svgRef.current.createSVGPoint();
-    point.x = e.clientX;
-    point.y = e.clientY;
-    
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
+    return (
+      <div key={node.id} className="ml-4">
+        <div 
+          className="flex items-center py-1 hover:bg-blue-50 rounded cursor-pointer group"
+          onClick={() => {
+            if (hasChildren) {
+              toggleNode(node.id);
+            }
+            setSelectedNode(node);
+          }}
+        >
+          <div className="w-4">
+            {hasChildren && (
+              isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+            )}
+          </div>
+          
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <div className="flex items-center">
+                  <span className="font-mono text-sm">
+                    {node.type}
+                    {node.value && (
+                      <span className="text-blue-600 ml-2">{node.value}</span>
+                    )}
+                  </span>
+                </div>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-gray-900 text-white px-3 py-2 rounded text-sm"
+                  sideOffset={5}
+                >
+                  <div>
+                    <div className="font-medium">Node Type: {node.type}</div>
+                    {node.value && <div>Value: {node.value}</div>}
+                    <div>Children: {node.children.length}</div>
+                  </div>
+                  <Tooltip.Arrow className="fill-gray-900" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        </div>
+        
+        {isExpanded && hasChildren && (
+          <div className="border-l-2 border-gray-200">
+            {node.children.map(child => renderNode(child, level + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
-  
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!isDragging) return;
-    
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-    
-    setTransform(prev => ({
-      ...prev,
-      x: prev.x + dx,
-      y: prev.y + dy
-    }));
-    
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-  
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-  
-  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    
-    const point = svgRef.current?.createSVGPoint();
-    if (!point) return;
-    
-    point.x = e.clientX;
-    point.y = e.clientY;
-    
-    const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(Math.max(0.1, transform.scale * scaleFactor), 3);
-    
-    setTransform(prev => ({
-      ...prev,
-      scale: newScale
-    }));
-  };
-  
+
   if (!parseTree) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -185,63 +89,62 @@ const ParseTreeVisualization: React.FC<ParseTreeVisualizationProps> = ({ parseTr
       </div>
     );
   }
-  
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="bg-gray-50 p-2 border-b flex justify-between items-center text-sm">
-        <div>
-          <button 
-            onClick={() => setTransform({ x: 0, y: 0, scale: 1 })}
-            className="px-2 py-1 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Reset View
-          </button>
+    <div className="h-full flex">
+      {/* Tree View */}
+      <div className="w-1/2 h-full overflow-auto p-4 border-r">
+        <div className="mb-4">
+          <h3 className="text-lg font-medium">Parse Tree</h3>
+          <p className="text-sm text-gray-600">Click nodes to expand/collapse</p>
         </div>
-        <div className="text-gray-500">
-          Drag to pan • Scroll to zoom
-        </div>
+        {renderNode(parseTree)}
       </div>
-      
-      <div className="flex-1 overflow-hidden relative">
-        <svg 
-          ref={svgRef}
-          className={`w-full h-full ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
-        />
-        
-        {selectedNode && (
-          <div className="absolute bottom-4 right-4 bg-white p-4 rounded-lg shadow-lg border border-gray-200 max-w-xs">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-medium">Node Details</h3>
-              <button 
-                onClick={() => setSelectedNode(null)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              </button>
+
+      {/* Node Details */}
+      <div className="w-1/2 p-4">
+        <h3 className="text-lg font-medium mb-4">Node Details</h3>
+        {selectedNode ? (
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg border p-4">
+              <h4 className="font-medium text-gray-900">Basic Information</h4>
+              <dl className="mt-2 space-y-2">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Type</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{selectedNode.type}</dd>
+                </div>
+                {selectedNode.value && (
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Value</dt>
+                    <dd className="mt-1 text-sm text-gray-900 font-mono">{selectedNode.value}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Children</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{selectedNode.children.length}</dd>
+                </div>
+              </dl>
             </div>
-            
-            <dl className="text-sm">
-              <dt className="font-medium text-gray-500">Type</dt>
-              <dd className="mb-1">{selectedNode.label}</dd>
-              
-              {selectedNode.value && (
-                <>
-                  <dt className="font-medium text-gray-500">Value</dt>
-                  <dd className="mb-1 font-mono">{selectedNode.value}</dd>
-                </>
-              )}
-              
-              <dt className="font-medium text-gray-500">Position</dt>
-              <dd>x: {Math.round(selectedNode.x)}, y: {Math.round(selectedNode.y)}</dd>
-            </dl>
+
+            {selectedNode.children.length > 0 && (
+              <div className="bg-white rounded-lg border p-4">
+                <h4 className="font-medium text-gray-900">Child Nodes</h4>
+                <ul className="mt-2 space-y-1">
+                  {selectedNode.children.map((child, index) => (
+                    <li key={index} className="text-sm">
+                      <span className="text-gray-500">{index + 1}.</span>{' '}
+                      <span className="font-mono">{child.type}</span>
+                      {child.value && (
+                        <span className="text-blue-600 ml-2">({child.value})</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
+        ) : (
+          <p className="text-gray-500">Select a node to view details</p>
         )}
       </div>
     </div>

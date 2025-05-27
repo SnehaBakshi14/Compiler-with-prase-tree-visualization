@@ -12,6 +12,9 @@ export interface ParseTreeNode {
   type: string;
   value?: string;
   children: ParseTreeNode[];
+  parent?: ParseTreeNode;
+  line?: number;
+  column?: number;
 }
 
 // Variable information
@@ -20,6 +23,7 @@ export interface Variable {
   type: string;
   line: number;
   used: boolean;
+  initialized: boolean;
 }
 
 // Scope information
@@ -36,7 +40,11 @@ export interface ControlFlowNode {
   id: string;
   type: string;
   condition?: string;
-  children: ControlFlowNode[];
+  next: ControlFlowNode[];
+  conditions: Array<{
+    type: string;
+    expression: string;
+  }>;
 }
 
 // Complexity information
@@ -49,10 +57,10 @@ export interface ComplexityInfo {
     bigO: number;
     details: string[];
   };
-  suggestions: {
+  suggestions: Array<{
     title: string;
     description: string;
-  }[];
+  }>;
 }
 
 // Compiler error
